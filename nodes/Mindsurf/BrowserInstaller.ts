@@ -1,13 +1,21 @@
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { homedir, platform } from 'os';
 import { chromium, firefox, webkit } from 'playwright';
+
+interface SystemInfo {
+  platform: string;
+  arch: string;
+  distro?: string;
+  libc?: string;
+}
 
 export class BrowserInstaller {
   private static instance: BrowserInstaller;
   private installationPath: string;
   private isInstalling: boolean = false;
   private installPromise: Promise<void> | null = null;
+  private systemInfo: SystemInfo;
 
   private constructor() {
     // Set custom path for browser binaries
@@ -20,6 +28,46 @@ export class BrowserInstaller {
 
     // Set environment variable for Playwright
     process.env.PLAYWRIGHT_BROWSERS_PATH = this.installationPath;
+    
+    // Detect system information
+    this.systemInfo = this.detectSystemInfo();
+  }
+  
+  private detectSystemInfo(): SystemInfo {
+    const info: SystemInfo = {
+      platform: platform(),
+      arch: process.arch,
+    };
+    
+    // Detect Linux distribution
+    if (info.platform === 'linux') {
+      try {
+        // Check for Alpine Linux
+        if (existsSync('/etc/alpine-release')) {
+          info.distro = 'alpine';
+          info.libc = 'musl';
+        } else if (existsSync('/etc/os-release')) {
+          const osRelease = require('fs').readFileSync('/etc/os-release', 'utf8');
+          if (osRelease.includes('Alpine')) {
+            info.distro = 'alpine';
+            info.libc = 'musl';
+          } else if (osRelease.includes('Ubuntu')) {
+            info.distro = 'ubuntu';
+            info.libc = 'glibc';
+          } else if (osRelease.includes('Debian')) {
+            info.distro = 'debian';
+            info.libc = 'glibc';
+          } else {
+            info.distro = 'unknown';
+            info.libc = 'glibc';
+          }
+        }
+      } catch (error) {
+        console.log('Mindsurf: Could not detect Linux distribution');
+      }
+    }
+    
+    return info;
   }
 
   static getInstance(): BrowserInstaller {
@@ -168,12 +216,119 @@ export class BrowserInstaller {
     return this.installationPath;
   }
 
+  private async findSystemBrowser(browserType: string): Promise<string | undefined> {
+    const candidatePaths: string[] = [];
+    
+    // Check environment variables first
+    if (browserType === 'chromium') {
+      const envPath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+      if (envPath && existsSync(envPath)) {
+        console.log(`Mindsurf: Using Chromium from environment variable: ${envPath}`);
+        return envPath;
+      }
+    } else if (browserType === 'firefox') {
+      const envPath = process.env.PLAYWRIGHT_FIREFOX_EXECUTABLE_PATH;
+      if (envPath && existsSync(envPath)) {
+        console.log(`Mindsurf: Using Firefox from environment variable: ${envPath}`);
+        return envPath;
+      }
+    }
+    
+    // Platform-specific system browser paths
+    if (this.systemInfo.platform === 'win32') {
+      if (browserType === 'chromium') {
+        candidatePaths.push(
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files\\Chromium\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Chromium\\Application\\chrome.exe'
+        );
+      } else if (browserType === 'firefox') {
+        candidatePaths.push(
+          'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+          'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe'
+        );
+      }
+    } else if (this.systemInfo.platform === 'darwin') {
+      if (browserType === 'chromium') {
+        candidatePaths.push(
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Chromium.app/Contents/MacOS/Chromium'
+        );
+      } else if (browserType === 'firefox') {
+        candidatePaths.push(
+          '/Applications/Firefox.app/Contents/MacOS/firefox',
+          '/Applications/Firefox Nightly.app/Contents/MacOS/firefox'
+        );
+      } else if (browserType === 'webkit') {
+        candidatePaths.push(
+          '/Applications/Safari.app/Contents/MacOS/Safari'
+        );
+      }
+    } else if (this.systemInfo.platform === 'linux') {
+      if (browserType === 'chromium') {
+        // Alpine-specific paths
+        if (this.systemInfo.distro === 'alpine' || this.systemInfo.libc === 'musl') {
+          candidatePaths.push(
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/lib/chromium/chromium',
+            '/usr/lib/chromium-browser/chromium-browser'
+          );
+        } else {
+          // Standard Linux paths
+          candidatePaths.push(
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/google-chrome-beta',
+            '/usr/bin/google-chrome-unstable',
+            '/snap/bin/chromium',
+            '/var/lib/flatpak/app/org.chromium.Chromium/current/active/export/bin/org.chromium.Chromium'
+          );
+        }
+      } else if (browserType === 'firefox') {
+        candidatePaths.push(
+          '/usr/bin/firefox',
+          '/usr/bin/firefox-esr',
+          '/snap/bin/firefox',
+          '/var/lib/flatpak/app/org.mozilla.firefox/current/active/export/bin/org.mozilla.firefox'
+        );
+      }
+    }
+    
+    // Check each candidate path
+    for (const path of candidatePaths) {
+      if (existsSync(path)) {
+        console.log(`Mindsurf: Found system ${browserType} at ${path}`);
+        return path;
+      }
+    }
+    
+    return undefined;
+  }
+  
   async getBrowserExecutablePath(browserType: string): Promise<string | undefined> {
     try {
+      // First, try to find system browser
+      const systemBrowser = await this.findSystemBrowser(browserType);
+      if (systemBrowser) {
+        return systemBrowser;
+      }
+      
+      // If system browser not found and we're on Alpine Linux, 
+      // don't try Playwright browsers as they won't work
+      if (this.systemInfo.distro === 'alpine' || this.systemInfo.libc === 'musl') {
+        console.error(`Mindsurf: No system ${browserType} found on Alpine Linux`);
+        console.error('Mindsurf: Please install chromium with: apk add --no-cache chromium chromium-chromedriver');
+        return undefined;
+      }
+      
       // Set environment variable to ensure correct path
       process.env.PLAYWRIGHT_BROWSERS_PATH = this.installationPath;
       
-      // Manually construct the path based on the browser type and version
+      // Try Playwright-installed browsers
       const fs = require('fs');
       const path = require('path');
       

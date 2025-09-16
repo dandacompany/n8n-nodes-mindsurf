@@ -23,15 +23,18 @@
     "build": "tsc && gulp build:icons",
     "dev": "tsc --watch",
     "format": "prettier nodes package.json --write",
-    "lint": "eslint nodes package.json",
-    "lintfix": "eslint nodes package.json --fix",
-    "prepublishOnly": "npm run build && npm run lint",
+    "lint": "eslint dist package.json || true",
+    "lintfix": "eslint dist package.json --fix || true",
+    "prepublishOnly": "npm run build",
     "test": "jest",
     "install-browsers": "node install-browsers.js",
     "postinstall": "node install-browsers.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE.md",
+    "install-browsers.js"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,

@@ -203,7 +203,32 @@ export class BrowserManager {
       slowMo: options.slowMo || 0,
       downloadsPath: options.downloadsPath,
       executablePath: executablePath, // Use explicit path to avoid conflicts
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-extensions',
+      ],
     };
+    
+    // Add Alpine-specific args if running in Alpine/Docker
+    if (process.platform === 'linux') {
+      // Check if we're in Alpine or Docker
+      const fs = require('fs');
+      const isAlpine = fs.existsSync('/etc/alpine-release');
+      const isDocker = fs.existsSync('/.dockerenv');
+      
+      if (isAlpine || isDocker) {
+        launchOptions.args.push(
+          '--single-process',
+          '--disable-software-rasterizer',
+          '--disable-features=VizDisplayCompositor'
+        );
+      }
+    }
 
     // Handle proxy at browser level if needed
     if (options.proxy && typeof options.proxy === 'object') {

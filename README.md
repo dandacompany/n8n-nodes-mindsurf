@@ -218,7 +218,21 @@ Configure browser behavior with these options:
 
 - n8n version 0.170.0 or higher
 - Node.js 16.x or higher
-- Playwright browsers (automatically installed)
+- Playwright browsers (automatically installed) or system browsers
+
+## 🐳 Docker Support
+
+This node supports Docker environments with system-installed browsers. See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for detailed instructions.
+
+### Quick Docker Setup
+
+```dockerfile
+FROM n8nio/n8n:latest-alpine
+RUN apk add --no-cache chromium chromium-chromedriver
+RUN npm install -g n8n-nodes-mindsurf
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+```
 
 ## Resources
 

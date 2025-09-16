@@ -1,37 +1,64 @@
-# Source files
+# Source files (keep only compiled JS)
 nodes/**/*.ts
 !nodes/**/*.d.ts
 
 # Build files
 tsconfig.json
+tsconfig.tsbuildinfo
 gulpfile.js
 .eslintrc.js
 .prettierrc
+jest.config.js
 
 # Development files
 *.spec.ts
 *.test.ts
+*.spec.js
+*.test.js
 __tests__/
 test/
 tests/
+examples/
 
 # Documentation
 docs/
 *.md
 !README.md
+!LICENSE.md
 
 # Git
 .git/
 .gitignore
+.github/
 
 # IDE
 .vscode/
 .idea/
+.cursor/
+.history/
 *.swp
 *.swo
 
 # Dependencies
 node_modules/
+
+# Scripts
+install.sh
+install-copy.sh
+install-browsers.js
+
+# Reference files
+ref/
+data/
+
+# Images (except the icon)
+*.png
+!nodes/Mindsurf/mindsurf.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+!nodes/Mindsurf/mindsurf.svg
 
 # Misc
 .DS_Store
@@ -39,3 +66,11 @@ node_modules/
 .env*
 tmp/
 temp/
+.npmrc
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Claude configuration
+.claude/
+CLAUDE.md
