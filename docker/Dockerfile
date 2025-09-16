@@ -1,7 +1,7 @@
 FROM docker.n8n.io/n8nio/n8n:latest
 USER root
 
-# Install Chromium and required dependencies
+# Install Chromium and required dependencies for browser automation
 RUN apk update && apk add --no-cache \
     chromium \
     nss \
@@ -27,10 +27,7 @@ RUN apk add --no-cache \
 RUN mkdir -p /run/dbus && \
     dbus-daemon --system --fork
 
-# Install the mindsurf node from npm
-RUN npm install -g n8n-nodes-mindsurf
-
-# Set environment variables for browser
+# Set environment variables for browser (these will be used by n8n-nodes-mindsurf when installed)
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV CHROME_BIN=/usr/bin/chromium-browser
