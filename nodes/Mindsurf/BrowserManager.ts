@@ -209,24 +209,36 @@ export class BrowserManager {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-first-run',
-        '--no-zygote',
         '--disable-extensions',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
       ],
     };
     
-    // Add Alpine-specific args if running in Alpine/Docker
+    // Add Alpine/Docker-specific args
     if (process.platform === 'linux') {
-      // Check if we're in Alpine or Docker
       const fs = require('fs');
       const isAlpine = fs.existsSync('/etc/alpine-release');
       const isDocker = fs.existsSync('/.dockerenv');
       
       if (isAlpine || isDocker) {
+        // Remove --single-process as it causes crashes on some sites
+        // Add more stable options for Alpine/Docker
         launchOptions.args.push(
-          '--single-process',
           '--disable-software-rasterizer',
-          '--disable-features=VizDisplayCompositor'
+          '--disable-web-security', // May be needed for some sites
+          '--disable-features=VizDisplayCompositor,IsolateOrigins,site-per-process',
+          '--disable-site-isolation-trials',
+          '--no-zygote' // Keep this for Alpine
         );
+        
+        // Use larger /dev/shm if available
+        if (fs.existsSync('/dev/shm')) {
+          launchOptions.args.push('--shm-size=256m');
+        }
       }
     }
 

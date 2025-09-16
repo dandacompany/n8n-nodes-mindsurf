@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  n8n:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - N8N_LOG_LEVEL=info
+      - EXECUTIONS_PROCESS=main
+      # Browser settings
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
+      - DISPLAY=:99
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+      - ./credentials:/home/node/.n8n/credentials
+    # Increase shared memory size for browser stability
+    shm_size: '256m'
+    # Add security options
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_ADMIN
+    networks:
+      - n8n_network
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  n8n_network:
+    driver: bridge
