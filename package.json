@@ -1,0 +1,60 @@
+{
+  "name": "n8n-nodes-mindsurf",
+  "version": "0.1.0",
+  "description": "Playwright-based web browser automation node for n8n",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/dandacompany/n8n-nodes-mindsurf",
+  "author": {
+    "name": "Dante Labs",
+    "email": "datapod.k@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dandacompany/n8n-nodes-mindsurf.git"
+  },
+  "engines": {
+    "node": ">=18.10"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier nodes package.json --write",
+    "lint": "eslint nodes package.json",
+    "lintfix": "eslint nodes package.json --fix",
+    "prepublishOnly": "npm run build && npm run lint",
+    "test": "jest",
+    "install-browsers": "node install-browsers.js",
+    "postinstall": "node install-browsers.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": [
+      "dist/nodes/Mindsurf/Mindsurf.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/parser": "^7.15.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.1",
+    "gulp": "^4.0.2",
+    "jest": "^29.7.0",
+    "n8n-workflow": "*",
+    "prettier": "^3.3.2",
+    "typescript": "^5.5.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "ws": "^8.16.0"
+  }
+}

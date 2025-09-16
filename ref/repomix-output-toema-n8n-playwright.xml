@@ -1,0 +1,1552 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+The content has been processed where security check has been disabled.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Security check has been disabled - content may contain sensitive information
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+nodes/
+  playwright/
+    config.ts
+    operations.ts
+    Playwright.node.json
+    Playwright.node.ts
+    playwright.svg
+    types.ts
+    utils.ts
+  scripts/
+    setup-browsers.ts
+    test-setup.ts
+.editorconfig
+.eslintrc.js
+.eslintrc.prepublish.js
+.gitignore
+.npmignore
+.prettierrc.js
+AI
+CODE_OF_CONDUCT.md
+docker-compose.yml
+dockerfile
+gulpfile.js
+index.js
+LICENSE.md
+package.json
+README_TEMPLATE.md
+README.md
+tsconfig.json
+tslint.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="nodes/playwright/config.ts">
+import { BrowserPaths } from './types';
+
+export type BrowserType = 'chromium' | 'firefox' | 'webkit';
+
+
+export const browserPaths: BrowserPaths = {
+    'chromium': {
+        windows: ['chrome-win', 'chrome.exe'],
+        linux: ['chrome-linux', 'chrome'],
+        darwin: ['chrome-mac', 'Chrome']
+    },
+    'firefox': {
+        windows: ['firefox', 'firefox.exe'],
+        linux: ['firefox', 'firefox'],
+        darwin: ['firefox', 'Firefox']
+    },
+    'webkit': {
+        windows: ['Playwright.exe'],
+				linux: ['minibrowser-gtk', 'MiniBrowser'],
+        darwin: ['Playwright']
+    }
+};
+</file>
+
+<file path="nodes/playwright/operations.ts">
+import { IExecuteFunctions } from 'n8n-workflow';
+import {  Page } from 'playwright';
+
+export async function handleOperation(
+    operation: string,
+    page: Page,
+    executeFunctions: IExecuteFunctions,
+    itemIndex: number
+): Promise<any> {
+    switch (operation) {
+        case 'navigate':
+					 const content = await page.content();
+            const url = page.url();
+            return { content: content, url:url };
+
+        case 'takeScreenshot':
+           const screenshotOptions = executeFunctions.getNodeParameter('screenshotOptions', itemIndex);
+    const dataPropertyName = executeFunctions.getNodeParameter('dataPropertyName', itemIndex) || 'screenshot';
+    const screenshot = await page.screenshot(screenshotOptions as any);
+
+    // Prepare binary data using n8n's helper
+    const binaryData = await executeFunctions.helpers.prepareBinaryData(
+        Buffer.from(screenshot),
+        (screenshotOptions as { path?: string }).path || dataPropertyName,
+        'image/png'
+    );
+
+    return {
+        binary: {
+            [dataPropertyName]: binaryData
+        },
+        json: {
+            success: true,
+            url: page.url()
+        },
+        pairedItem: {
+            item: itemIndex
+        }
+    };
+
+        case 'getText':
+            const selector = executeFunctions.getNodeParameter('selector', itemIndex) as string;
+            const element = await page.$(selector);
+            const text = await element?.textContent();
+            return { text };
+
+        case 'clickElement':
+            const clickSelector = executeFunctions.getNodeParameter('selector', itemIndex) as string;
+            await page.click(clickSelector);
+            return { success: true };
+
+        case 'fillForm':
+            const formSelector = executeFunctions.getNodeParameter('selector', itemIndex) as string;
+            const value = executeFunctions.getNodeParameter('value', itemIndex) as string;
+            await page.fill(formSelector, value);
+            return { success: true };
+
+        default:
+            throw new Error(`Unknown operation: ${operation}`);
+    }
+}
+</file>
+
+<file path="nodes/playwright/Playwright.node.json">
+{
+    "node": "n8n-nodes-base.playwright",
+    "nodeVersion": "1.0",
+    "codexVersion": "1.0",
+    "categories": [
+        "Development",
+        "Automation"
+    ],
+    "resources": {
+        "primaryDocumentation": [
+            {
+                "url": "https://playwright.dev/docs/intro"
+            }
+        ]
+    }
+}
+</file>
+
+<file path="nodes/playwright/Playwright.node.ts">
+import { INodeType, INodeExecutionData, IExecuteFunctions,INodeTypeDescription, NodeConnectionType, INodeInputConfiguration, INodeOutputConfiguration } from 'n8n-workflow';
+import { join } from 'path';
+import { platform } from 'os';
+import { getBrowserExecutablePath } from './utils';
+import { handleOperation } from './operations';
+import { IBrowserOptions } from './types';
+import { installBrowser } from '../scripts/setup-browsers';
+import { BrowserType } from './config';
+
+export class Playwright implements INodeType {
+    description : INodeTypeDescription = {
+    displayName: 'Playwright',
+    name: 'playwright',
+    icon: 'file:playwright.svg',
+    group: ['automation'],
+    version: 1,
+    subtitle: '={{$parameter["operation"]}}',
+    description: 'Automate browser actions using Playwright',
+    defaults: {
+        name: 'Playwright',
+    },
+    // eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
+    inputs: [
+        {
+            displayName: 'Input',
+            type: NodeConnectionType.Main,
+        } as INodeInputConfiguration,
+    ],
+    // eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
+    outputs: [
+        {
+            displayName: 'Output',
+            type: NodeConnectionType.Main,
+        } as INodeOutputConfiguration,
+    ],
+
+    properties: [
+        {
+            displayName: 'Operation',
+            name: 'operation',
+            type: 'options',
+            noDataExpression: true,
+            options: [
+                {
+                    name: 'Click Element',
+                    value: 'clickElement',
+                    description: 'Click on an element',
+																				action: 'Click on an element',
+                },
+                {
+                    name: 'Fill Form',
+                    value: 'fillForm',
+                    description: 'Fill a form field',
+																				action: 'Fill a form field',
+                },
+                {
+                    name: 'Get Text',
+                    value: 'getText',
+                    description: 'Get text from an element',
+																				action: 'Get text from an element',
+                },
+                {
+                    name: 'Navigate',
+                    value: 'navigate',
+                    description: 'Navigate to a URL',
+																				action: 'Navigate to a URL',
+                },
+                {
+                    name: 'Take Screenshot',
+                    value: 'takeScreenshot',
+                    description: 'Take a screenshot of a webpage',
+																				action: 'Take a screenshot of a webpage',
+                }
+            ],
+            default: 'navigate',
+        },
+
+        {
+            displayName: 'URL',
+            name: 'url',
+            type: 'string',
+            default: '',
+            placeholder: 'https://example.com',
+            description: 'The URL to navigate to',
+            displayOptions: {
+                show: {
+                    operation: ['navigate', 'takeScreenshot', 'getText', 'clickElement', 'fillForm'],
+                },
+            },
+            required: true,
+        },
+				{
+    displayName: 'Property Name',
+    name: 'dataPropertyName',
+    type: 'string',
+    required: true,
+    default: 'screenshot',
+    description: 'Name of the binary property in which to store the screenshot data',
+    displayOptions: {
+        show: {
+            operation: ['takeScreenshot'],
+        },
+    },
+},
+        {
+            displayName: 'Selector',
+            name: 'selector',
+            type: 'string',
+            default: '',
+            placeholder: '#submit-button',
+            description: 'CSS selector for the element',
+            displayOptions: {
+                show: {
+                    operation: ['getText', 'clickElement', 'fillForm'],
+                },
+            },
+            required: true,
+        },
+        {
+            displayName: 'Value',
+            name: 'value',
+            type: 'string',
+            default: '',
+            description: 'Value to fill in the form field',
+            displayOptions: {
+                show: {
+                    operation: ['fillForm'],
+                },
+            },
+            required: true,
+        },
+        {
+            displayName: 'Browser',
+            name: 'browser',
+            type: 'options',
+            options: [
+                {
+                    name: 'Chromium',
+                    value: 'chromium',
+                },
+                {
+                    name: 'Firefox',
+                    value: 'firefox',
+                },
+                {
+                    name: 'Webkit',
+                    value: 'webkit',
+                },
+            ],
+            default: 'chromium',
+        },
+        {
+            displayName: 'Browser Launch Options',
+            name: 'browserOptions',
+            type: 'collection',
+            placeholder: 'Add Option',
+            default: {},
+            options: [
+                {
+                    displayName: 'Headless',
+                    name: 'headless',
+                    type: 'boolean',
+                    default: true,
+                    description: 'Whether to run browser in headless mode',
+                },
+                {
+                    displayName: 'Slow Motion',
+                    name: 'slowMo',
+                    type: 'number',
+                    default: 0,
+                    description: 'Slows down operations by the specified amount of milliseconds',
+                }
+            ],
+        },
+        {
+            displayName: 'Screenshot Options',
+            name: 'screenshotOptions',
+            type: 'collection',
+            placeholder: 'Add Option',
+            default: {},
+            displayOptions: {
+                show: {
+                    operation: ['takeScreenshot'],
+                },
+            },
+            options: [
+                {
+                    displayName: 'Full Page',
+                    name: 'fullPage',
+                    type: 'boolean',
+                    default: false,
+                    description: 'Whether to take a screenshot of the full scrollable page',
+                },
+                {
+                    displayName: 'Path',
+                    name: 'path',
+                    type: 'string',
+                    default: '',
+                    description: 'The file path to save the screenshot to',
+                },
+            ],
+        },
+    ],
+};
+
+    async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+        const items = this.getInputData();
+        const returnData: INodeExecutionData[] = [];
+
+        for (let i = 0; i < items.length; i++) {
+            const operation = this.getNodeParameter('operation', i) as string;
+            const url = this.getNodeParameter('url', i) as string;
+            const browserType = this.getNodeParameter('browser', i) as BrowserType;
+            const browserOptions = this.getNodeParameter('browserOptions', i) as IBrowserOptions;
+
+            try {
+                const playwright = require('playwright');
+                const browsersPath = join(__dirname, '..', 'browsers');
+
+                // Add better error handling for browser executable
+                let executablePath;
+                try {
+                    executablePath = getBrowserExecutablePath(browserType, browsersPath);
+                } catch (error) {
+                    console.error(`Browser path error: ${error.message}`);
+                    // Try to install missing browser
+                    await installBrowser(browserType);
+                    executablePath = getBrowserExecutablePath(browserType, browsersPath);
+                }
+
+                console.log(`Launching browser from: ${executablePath}`);
+
+                const browser = await playwright[browserType].launch({
+                    headless: browserOptions.headless !== false,
+                    slowMo: browserOptions.slowMo || 0,
+                    executablePath,
+                });
+
+                const context = await browser.newContext();
+                const page = await context.newPage();
+                await page.goto(url);
+
+								const result = await handleOperation(operation, page, this, i);
+								// console.log(`Operation result:`, result);
+                await browser.close();
+
+                returnData.push(result );
+            } catch (error) {
+                console.error(`Browser launch error:`, error);
+                if (this.continueOnFail()) {
+                    returnData.push({
+                        json: {
+                            error: error.message,
+                            browserType,
+                            os: platform(),
+                        },
+                    });
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        return [returnData];
+    }
+}
+</file>
+
+<file path="nodes/playwright/playwright.svg">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256px" height="192px" viewBox="0 0 256 192" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid">
+    <title>Playwright</title>
+    <g>
+        <path d="M84.380258,108.351608 C74.8238495,111.063682 68.554264,115.818897 64.4242284,120.570403 C68.3799853,117.108559 73.678801,113.931495 80.8264547,111.905411 C88.1372629,109.833348 94.3742174,109.848181 99.5276772,110.842682 L99.5276772,106.812764 C95.131403,106.41081 90.0914098,106.731187 84.380258,108.351608 Z M63.9874191,74.4747851 L28.4964782,83.8250256 C28.4964782,83.8250256 29.1433119,84.7386912 30.3410148,85.9579009 L60.4328742,78.0285884 C60.4328742,78.0285884 60.0064474,83.5231896 56.3033577,88.4385921 C63.3081028,83.1390348 63.9874191,74.4747851 63.9874191,74.4747851 Z M93.6956427,157.884596 C43.750467,171.336691 17.3261001,113.45538 9.32588954,83.4126895 C5.62969676,69.5452921 4.01617216,59.042587 3.58611152,52.2649975 C3.53990911,51.561208 3.56126753,50.9679186 3.61102968,50.4243173 C1.020135,50.5807973 -0.220284754,51.9275642 0.0320857117,55.8195425 C0.462146344,62.5934239 2.07567095,73.0953873 5.77186373,86.9672344 C13.7685145,117.005475 40.1964412,174.886786 90.1418394,161.434691 C101.013125,158.506067 109.180495,153.171654 115.311399,146.362175 C109.660318,151.465947 102.587567,155.485482 93.6956427,157.884596 Z M103.081481,39.05096 L103.081481,42.605505 L122.671896,42.605505 C122.269942,41.3469899 121.865022,40.2130656 121.463068,39.05096 L103.081481,39.05096 Z" fill="#2D4552"></path>
+        <path d="M127.050371,68.3253408 C135.860718,70.8275387 140.520265,77.0044227 142.983157,82.4708426 L152.806546,85.2607859 C152.806546,85.2607859 151.466454,66.1294285 134.161686,61.2140261 C117.973044,56.6145502 108.010974,70.2090345 106.79918,71.9681375 C111.508414,68.6130861 118.38538,65.8661563 127.050371,68.3253408 Z M205.246652,82.5590944 C189.043177,77.9388534 179.084815,91.561519 177.890821,93.2961488 C182.603763,89.9448054 189.47702,87.1971341 198.138304,89.6674427 C206.93456,92.1733486 211.590398,98.3428165 214.060707,103.812944 L223.898186,106.61327 C223.898186,106.61327 222.536587,87.4782049 205.246652,82.5590944 Z M195.487042,133.00204 L113.768847,110.156691 C113.768847,110.156691 114.65359,114.641959 118.047947,120.44952 L186.850973,139.683961 C192.515403,136.406779 195.487042,133.00204 195.487042,133.00204 Z M138.831615,182.176088 C74.1267345,164.828307 81.9492548,82.3855573 92.419329,43.3189354 C96.7303179,27.2192868 101.162189,15.2528626 104.837617,7.23136786 C102.644671,6.77994881 100.828464,7.93508322 99.0337638,11.5850736 C95.131403,19.4998504 90.1410978,32.3868372 85.3117223,50.4272837 C74.8446146,89.4931639 67.0220942,171.932947 131.724008,189.280728 C162.221307,197.451064 185.979579,185.033518 203.690009,165.532096 C186.879154,180.758126 165.41617,189.294819 138.831615,182.176088 Z" fill="#2D4552"></path>
+        <path d="M103.081481,138.564869 L103.081481,121.928294 L56.8578607,135.035539 C56.8578607,135.035539 60.2734277,115.19001 84.380258,108.351608 C91.6910663,106.279545 97.9287624,106.293636 103.081481,107.288879 L103.081481,39.05096 L126.225699,39.05096 C123.705702,31.264037 121.268025,25.2688479 119.220435,21.103215 C115.833494,14.2084509 112.361268,18.7790038 104.478677,25.371932 C98.9269718,30.0099716 84.8956781,39.9045551 63.7812511,45.5942002 C42.6665273,51.2875533 25.5964056,49.7776318 18.474115,48.5443316 C8.37699735,46.8022856 3.0956837,44.5848666 3.58974542,52.2649975 C4.01973189,59.0388789 5.63333066,69.541584 9.32952344,83.4126895 C17.3261001,113.451672 43.7540267,171.332983 93.6993508,157.880888 C106.745784,154.365649 115.954377,147.417488 122.337429,138.561161 L103.081481,138.561161 L103.081481,138.564869 Z M28.4929926,83.8250256 L63.9874191,74.4747851 C63.9874191,74.4747851 62.9528708,88.12934 49.6466509,91.6371634 C36.336723,95.1412787 28.4929926,83.8250256 28.4929926,83.8250256 Z" fill="#E2574C"></path>
+        <path d="M236.66429,39.8400349 C227.437899,41.45749 205.303014,43.4724491 177.947925,36.140134 C150.585419,28.8122687 132.430764,15.9960317 125.237872,9.97191979 C115.041453,1.4315193 110.556185,-4.50374756 106.142112,4.47383303 C102.239751,12.3922438 97.2494461,25.2792305 92.419329,43.319677 C81.9529629,82.3855573 74.1304425,164.82534 138.831615,182.173121 C203.519438,199.50607 237.957661,124.195401 248.424769,85.1258125 C253.254886,67.0890741 255.372929,53.4308111 255.955836,44.624172 C256.62032,34.6480113 249.767828,37.544005 236.66429,39.8400349 Z M106.667915,72.1609566 C106.667915,72.1609566 116.864334,56.3023317 134.157978,61.2177341 C151.462746,66.1331366 152.802838,85.2644939 152.802838,85.2644939 L106.667915,72.1609566 Z M148.882678,143.323792 C118.463991,134.413327 113.772555,110.156691 113.772555,110.156691 L195.487042,133.002782 C195.487042,132.999073 178.992856,152.123015 148.882678,143.323792 Z M177.773646,93.4741356 C177.773646,93.4741356 187.955975,77.6266349 205.246652,82.556128 C222.536587,87.4789465 223.898186,106.610304 223.898186,106.610304 L177.773646,93.4741356 Z" fill="#2EAD33"></path>
+        <path d="M86.9284358,126.509229 L56.8578607,135.031831 C56.8578607,135.031831 60.1243637,116.42331 82.2763056,109.048723 L65.2489006,45.1470083 L63.777543,45.5942002 C42.6629676,51.2882949 25.5928458,49.7776318 18.4705553,48.5443316 C8.37351178,46.8030273 3.09219812,44.5848666 3.58618569,52.2657391 C4.01624632,59.0396205 5.62977092,69.541584 9.3259637,83.4134311 C17.3226145,113.451672 43.7505412,171.332983 93.6956427,157.880888 L95.1670004,157.418864 L86.9284358,126.509229 Z M28.4929926,83.8257672 L63.9874191,74.4747851 C63.9874191,74.4747851 62.9528708,88.12934 49.6466509,91.6371634 C36.3367972,95.1412787 28.4929926,83.8257672 28.4929926,83.8257672 Z" fill="#D65348"></path>
+        <path d="M150.25466,143.657517 L148.87897,143.32305 C118.460283,134.413327 113.768847,110.156691 113.768847,110.156691 L155.905741,121.934968 L178.214163,36.2113288 L177.944217,36.140134 C150.581711,28.8122687 132.427798,15.9960317 125.234164,9.97191979 C115.037745,1.4315193 110.552477,-4.50374756 106.138404,4.47383303 C102.239751,12.3922438 97.2494461,25.2792305 92.419329,43.319677 C81.9529629,82.3855573 74.1304425,164.82534 138.831615,182.17238 L140.157617,182.471249 L150.25466,143.657517 Z M106.667915,72.1609566 C106.667915,72.1609566 116.864334,56.3023317 134.157978,61.2177341 C151.462746,66.1331366 152.802838,85.2644939 152.802838,85.2644939 L106.667915,72.1609566 Z" fill="#1D8D22"></path>
+        <path d="M88.4606056,126.07242 L80.3963199,128.361034 C82.3015204,139.101055 85.6595382,149.407974 90.9301726,158.513483 C91.8475463,158.311023 92.7575039,158.136744 93.6919347,157.880888 C96.1407365,157.220112 98.4115516,156.402114 100.597823,155.509955 C94.7086843,146.770803 90.812998,136.705649 88.4606056,126.07242 Z M85.3117223,50.4280253 C81.1675961,65.8950792 77.4602791,88.1575212 78.4807368,110.48745 C80.3073265,109.694667 82.2370001,108.956022 84.380258,108.3479 L85.8731224,108.014175 C84.0532072,84.1624589 87.9874574,59.8568766 92.419329,43.319677 C93.5428707,39.1362454 94.6693789,35.2450087 95.792179,31.6163026 C93.9833881,32.767284 92.0359157,33.9471882 89.8177551,35.1626898 C88.3219243,39.7799643 86.8112612,44.826632 85.3117223,50.4280253 Z" fill="#C04B41"></path>
+    </g>
+</svg>
+</file>
+
+<file path="nodes/playwright/types.ts">
+export interface IBrowserOptions {
+    headless?: boolean;
+    slowMo?: number;
+}
+
+
+export interface BrowserPaths {
+    chromium: {
+        windows: string[];
+        linux: string[];
+        darwin: string[];
+    };
+    firefox: {
+        windows: string[];
+        linux: string[];
+        darwin: string[];
+    };
+    webkit: {
+        windows: string[];
+        linux: string[];
+        darwin: string[];
+    };
+}
+
+export interface IScreenshotOptions {
+    fullPage?: boolean;
+    path?: string;
+}
+</file>
+
+<file path="nodes/playwright/utils.ts">
+import { join } from 'path';
+import { BrowserType, browserPaths } from './config';
+import { platform } from 'os';
+import { readdirSync } from 'fs';
+
+export function getBrowserExecutablePath(browserType: BrowserType, basePath: string): string {
+    const os = platform();
+    const files = readdirSync(basePath);
+
+    // Find any directory that starts with the browser type
+    const browserDir = files.find(f => f.startsWith(browserType));
+    if (!browserDir) {
+        throw new Error(`Browser ${browserType} not found in ${basePath}`);
+    }
+
+    let pathSegments: string[];
+    switch (os) {
+        case 'win32':
+            pathSegments = browserPaths[browserType].windows;
+            break;
+        case 'linux':
+            pathSegments = browserPaths[browserType].linux;
+            break;
+        case 'darwin':
+            pathSegments = browserPaths[browserType].darwin;
+            break;
+        default:
+            throw new Error(`Unsupported operating system: ${os}`);
+    }
+
+    return join(basePath, browserDir, ...pathSegments);
+}
+</file>
+
+<file path="nodes/scripts/setup-browsers.ts">
+import { mkdirSync, existsSync, readdirSync, rmSync, cpSync } from 'fs';
+import { join } from 'path';
+import { execSync } from 'child_process';
+import { platform } from 'os';
+import { BrowserType } from '../playwright/config';
+
+async function setupBrowsers() {
+	try {
+			// 1. First log the environment
+			console.log('Current working directory:', process.cwd());
+			console.log('Operating System:', platform());
+			console.log('Node version:', process.version);
+
+			// 2. Determine paths
+			const os = platform();
+			const sourcePath = os === 'win32'
+					? join(process.env.USERPROFILE || '', 'AppData', 'Local', 'ms-playwright')
+					: join(process.env.HOME || '', '.cache', 'ms-playwright');
+
+			const browsersPath = join(__dirname, '..', 'browsers');
+
+			console.log('\nPaths:');
+			console.log('Source path:', sourcePath);
+			console.log('Destination path:', browsersPath);
+
+			// 3. Check if source exists
+			if (!existsSync(sourcePath)) {
+					console.log('\nInstalling Playwright browsers...');
+					execSync('npx --yes playwright install', { stdio: 'inherit' });
+			}
+
+			// 4. Clean destination if it exists
+			if (existsSync(browsersPath)) {
+					console.log('\nCleaning existing browsers directory...');
+					rmSync(browsersPath, { recursive: true, force: true });
+			}
+
+			// 5. Create fresh browsers directory
+			console.log('Creating browsers directory...');
+			mkdirSync(browsersPath, { recursive: true });
+
+			// 6. Copy browser files with detailed logging
+			console.log('\nCopying browser files...');
+			const files = readdirSync(sourcePath);
+
+			for (const file of files) {
+					// Only copy browser directories we need
+					if (file.startsWith('chromium-') ||
+							file.startsWith('firefox-') ||
+							file.startsWith('webkit')) {
+
+							const sourceFull = join(sourcePath, file);
+							const destFull = join(browsersPath, file);
+
+							console.log(`Copying ${file}...`);
+							cpSync(sourceFull, destFull, { recursive: true });
+					}
+			}
+
+			// 7. Verify installation
+			console.log('\nVerifying installation...');
+			const installedFiles = readdirSync(browsersPath);
+			console.log('Installed browsers:', installedFiles);
+
+			// 8. Verify each browser executable
+			const browsers: BrowserType[] = ['chromium', 'firefox', 'webkit'];
+			for (const browserType of browsers) {
+					const browserDir = installedFiles.find(f => f.startsWith(browserType));
+
+					if (!browserDir) {
+							console.log(`\nInstalling ${browserType}...`);
+							await installBrowser(browserType);
+					}
+			}
+
+			console.log('\nBrowser setup completed successfully!');
+	} catch (error) {
+			console.error('\nError during browser setup:', error);
+			process.exit(1);
+	}
+}
+
+export async function installBrowser(browserType: BrowserType) {
+    try {
+        console.log(`Installing ${browserType}...`);
+        execSync(`PLAYWRIGHT_BROWSERS_PATH=~/.n8n/nodes/node_modules/n8n-nodes-playwright/dist/nodes/browsers npx --yes playwright install ${browserType}`, { stdio: 'inherit' });
+    } catch (error) {
+        console.error(`Failed to install ${browserType}:`, error);
+    }
+}
+
+// Run the setup
+console.log('Starting browser setup...\n');
+setupBrowsers().catch(error => {
+    console.error('Unhandled error:', error);
+    process.exit(1);
+});
+</file>
+
+<file path="nodes/scripts/test-setup.ts">
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { platform } from 'os';
+
+function testPaths() {
+    const os = platform();
+    const sourcePath = os === 'win32'
+        ? join(process.env.USERPROFILE || '', 'AppData', 'Local', 'ms-playwright')
+        : join(process.env.HOME || '', '.cache', 'ms-playwright');
+    
+    console.log('Testing paths:');
+    console.log('Source path exists:', existsSync(sourcePath));
+    if (existsSync(sourcePath)) {
+        console.log('Source contents:', readdirSync(sourcePath));
+    }
+}
+
+function testBrowserVersions() {
+    const browsersPath = join(process.cwd(), 'browsers');
+    console.log('\nTesting browser versions:');
+    console.log('Browsers path exists:', existsSync(browsersPath));
+    if (existsSync(browsersPath)) {
+        console.log('Installed browsers:', readdirSync(browsersPath));
+    }
+}
+
+console.log('Running setup tests...\n');
+testPaths();
+testBrowserVersions();
+</file>
+
+<file path=".editorconfig">
+root = true
+
+[*]
+charset = utf-8
+indent_style = tab
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[package.json]
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.yml]
+indent_style = space
+indent_size = 2
+</file>
+
+<file path=".eslintrc.js">
+/**
+ * @type {import('@types/eslint').ESLint.ConfigData}
+ */
+module.exports = {
+	root: true,
+
+	env: {
+		browser: true,
+		es6: true,
+		node: true,
+	},
+
+	parser: '@typescript-eslint/parser',
+
+	parserOptions: {
+		project: ['./tsconfig.json'],
+		sourceType: 'module',
+		extraFileExtensions: ['.json'],
+	},
+
+	ignorePatterns: ['.eslintrc.js', '**/*.js', '**/node_modules/**', '**/dist/**'],
+
+	overrides: [
+		{
+			files: ['package.json'],
+			plugins: ['eslint-plugin-n8n-nodes-base'],
+			extends: ['plugin:n8n-nodes-base/community'],
+			rules: {
+				'n8n-nodes-base/community-package-json-name-still-default': 'off',
+			},
+		},
+		{
+			files: ['./credentials/**/*.ts'],
+			plugins: ['eslint-plugin-n8n-nodes-base'],
+			extends: ['plugin:n8n-nodes-base/credentials'],
+			rules: {
+				'n8n-nodes-base/cred-class-field-documentation-url-missing': 'off',
+				'n8n-nodes-base/cred-class-field-documentation-url-miscased': 'off',
+			},
+		},
+		{
+			files: ['./nodes/**/*.ts'],
+			plugins: ['eslint-plugin-n8n-nodes-base'],
+			extends: ['plugin:n8n-nodes-base/nodes'],
+			rules: {
+				'n8n-nodes-base/node-execute-block-missing-continue-on-fail': 'off',
+				'n8n-nodes-base/node-resource-description-filename-against-convention': 'off',
+				'n8n-nodes-base/node-param-fixed-collection-type-unsorted-items': 'off',
+			},
+		},
+	],
+};
+</file>
+
+<file path=".eslintrc.prepublish.js">
+/**
+ * @type {import('@types/eslint').ESLint.ConfigData}
+ */
+module.exports = {
+	extends: "./.eslintrc.js",
+
+	overrides: [
+		{
+			files: ['package.json'],
+			plugins: ['eslint-plugin-n8n-nodes-base'],
+			rules: {
+				'n8n-nodes-base/community-package-json-name-still-default': 'error',
+			},
+		},
+	],
+};
+</file>
+
+<file path=".gitignore">
+node_modules
+.DS_Store
+.tmp
+tmp
+dist
+npm-debug.log*
+yarn.lock
+.vscode/launch.json
+ai_files
+!nodes/browsers/.gitkeep
+nodes/browsers/*
+.vscode
+*.tgz
+.devcontainer
+ai_files
+</file>
+
+<file path=".npmignore">
+# Development files
+.DS_Store
+*.tsbuildinfo
+node_modules/ 
+src/ 
+tests/ 
+.git/ 
+.github/ 
+.vscode/ 
+.idea/
+*.log
+*.tsbuildinfo 
+.eslintrc*
+.prettierrc*
+.gitignore 
+gulpfile.js 
+tsconfig.json
+
+
+# Don't ignore these files
+!dist/
+</file>
+
+<file path=".prettierrc.js">
+module.exports = {
+	/**
+	 * https://prettier.io/docs/en/options.html#semicolons
+	 */
+	semi: true,
+
+	/**
+	 * https://prettier.io/docs/en/options.html#trailing-commas
+	 */
+	trailingComma: 'all',
+
+	/**
+	 * https://prettier.io/docs/en/options.html#bracket-spacing
+	 */
+	bracketSpacing: true,
+
+	/**
+	 * https://prettier.io/docs/en/options.html#tabs
+	 */
+	useTabs: true,
+
+	/**
+	 * https://prettier.io/docs/en/options.html#tab-width
+	 */
+	tabWidth: 2,
+
+	/**
+	 * https://prettier.io/docs/en/options.html#arrow-function-parentheses
+	 */
+	arrowParens: 'always',
+
+	/**
+	 * https://prettier.io/docs/en/options.html#quotes
+	 */
+	singleQuote: true,
+
+	/**
+	 * https://prettier.io/docs/en/options.html#quote-props
+	 */
+	quoteProps: 'as-needed',
+
+	/**
+	 * https://prettier.io/docs/en/options.html#end-of-line
+	 */
+	endOfLine: 'lf',
+
+	/**
+	 * https://prettier.io/docs/en/options.html#print-width
+	 */
+	printWidth: 100,
+};
+</file>
+
+<file path="AI">
+#!/bin/bash
+
+
+## This script turns all you src code into .txt so you feed this codebase into any selected LLM with a small context 
+# Create ai_files directory if it doesn't exist
+mkdir -p ai_files
+
+# Remove any existing files in ai_files
+rm -rf ai_files/*
+
+# Associative array to keep track of file counts
+declare -A file_counts
+
+# Function to copy file with path comment and handle naming conflicts
+copy_file() {
+    local file=$1
+    local relative_path=${file#./}
+    local base_name=$(basename "${file%.*}")
+    
+    if [[ -v "file_counts[$base_name]" ]]; then
+        file_counts[$base_name]=$((file_counts[$base_name] + 1))
+        dest_file="ai_files/${base_name}_${file_counts[$base_name]}.txt"
+    else
+        # file_counts[$base_name]=22
+        dest_file="ai_files/${base_name}.txt"
+    fi
+    
+    echo "// File: $relative_path" > "$dest_file"
+    cat "$file" >> "$dest_file"
+}
+
+# Copy all files from the base directory to ai_files, excluding dot files and directories
+find . -type f \
+    -not -path '*/\.*' \
+    -not -name '.*' \
+    -not -path './ai_files/*' \
+    -not -path './pnpm-lock.yaml' \
+    -not -path './*.txt' \
+    -not -path './*.md' \
+    -not -path './*.svg' \
+    -not -path './package-lock.json' \
+    -not -path './nodes/browsers/*' \
+    -not -path './dist/nodes/browsers/*' \
+    -not -path './AI' \
+    -not -path './node_modules/*' \
+    | while read -r file; do
+    copy_file "$file"
+done
+
+# Add ai_files to git
+# git add ai_files
+
+# Inform the user
+echo "Files copied from the base directory to ai_files, paths added as comments, and extensions changed to .txt"
+echo "Files and folders starting with dots were excluded"
+echo "Files with the same name have been numbered to avoid conflicts"
+</file>
+
+<file path="CODE_OF_CONDUCT.md">
+# Contributor Covenant Code of Conduct
+
+## Our Pledge
+
+In the interest of fostering an open and welcoming environment, we as
+contributors and maintainers pledge to making participation in our project and
+our community a harassment-free experience for everyone, regardless of age, body
+size, disability, ethnicity, sex characteristics, gender identity and expression,
+level of experience, education, socio-economic status, nationality, personal
+appearance, race, religion, or sexual identity and orientation.
+
+## Our Standards
+
+Examples of behavior that contributes to creating a positive environment
+include:
+
+* Using welcoming and inclusive language
+* Being respectful of differing viewpoints and experiences
+* Gracefully accepting constructive criticism
+* Focusing on what is best for the community
+* Showing empathy towards other community members
+
+Examples of unacceptable behavior by participants include:
+
+* The use of sexualized language or imagery and unwelcome sexual attention or
+ advances
+* Trolling, insulting/derogatory comments, and personal or political attacks
+* Public or private harassment
+* Publishing others' private information, such as a physical or electronic
+ address, without explicit permission
+* Other conduct which could reasonably be considered inappropriate in a
+ professional setting
+
+## Our Responsibilities
+
+Project maintainers are responsible for clarifying the standards of acceptable
+behavior and are expected to take appropriate and fair corrective action in
+response to any instances of unacceptable behavior.
+
+Project maintainers have the right and responsibility to remove, edit, or
+reject comments, commits, code, wiki edits, issues, and other contributions
+that are not aligned to this Code of Conduct, or to ban temporarily or
+permanently any contributor for other behaviors that they deem inappropriate,
+threatening, offensive, or harmful.
+
+## Scope
+
+This Code of Conduct applies both within project spaces and in public spaces
+when an individual is representing the project or its community. Examples of
+representing a project or community include using an official project e-mail
+address, posting via an official social media account, or acting as an appointed
+representative at an online or offline event. Representation of a project may be
+further defined and clarified by project maintainers.
+
+## Enforcement
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be
+reported by contacting the project team at jan@n8n.io. All
+complaints will be reviewed and investigated and will result in a response that
+is deemed necessary and appropriate to the circumstances. The project team is
+obligated to maintain confidentiality with regard to the reporter of an incident.
+Further details of specific enforcement policies may be posted separately.
+
+Project maintainers who do not follow or enforce the Code of Conduct in good
+faith may face temporary or permanent repercussions as determined by other
+members of the project's leadership.
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant][homepage], version 1.4,
+available at https://www.contributor-covenant.org/version/1/4/code-of-conduct.html
+
+[homepage]: https://www.contributor-covenant.org
+
+For answers to common questions about this code of conduct, see
+https://www.contributor-covenant.org/faq
+</file>
+
+<file path="docker-compose.yml">
+version: '3.8'
+
+services:
+  n8n:
+    build: .
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
+    name: n8n_data
+</file>
+
+<file path="dockerfile">
+# Use the official n8n image as base
+FROM docker.n8n.io/n8nio/n8n:1.79.3
+
+# Install WebKit dependencies
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libwoff1 \
+    libopus0 \
+    libwebp6 \
+    libwebpdemux2 \
+    libenchant1c2a \
+    libgudev-1.0-0 \
+    libsecret-1-0 \
+    libhyphen0 \
+    libgdk-pixbuf2.0-0 \
+    libegl1 \
+    libnotify4 \
+    libxslt1.1 \
+    libevent-2.1-7 \
+    libgles2 \
+    libvpx6 \
+    libxcomposite1 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libatspi2.0-0 \
+    libcairo2 \
+    libepoxy0 \
+    libfontconfig1 \
+    libfreetype6 \
+    libgbm1 \
+    libglib2.0-0 \
+    libharfbuzz0b \
+    libicu66 \
+    libjpeg8 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libpangoft2-1.0-0 \
+    libpixman-1-0 \
+    libpng16-16 \
+    libwayland-client0 \
+    libwayland-egl1 \
+    libwayland-server0 \
+    libx11-6 \
+    libdbus-glib-1-2 \
+		libxt6 \
+    libxcb1 \
+    libxext6 \
+    libxfixes3 \
+    libpci3 \
+		libasound2 \
+    libxi6 \
+    libxkbcommon0 \
+    libxrandr2 \
+    libxrender1 \
+    libxshmfence1 \
+    libgtk-3-0 \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    ttf-ubuntu-font-family \
+    && rm -rf /var/lib/apt/lists/*
+
+# Switch back to node user
+USER node
+
+# Set working directory
+WORKDIR /home/node/.n8n
+
+# Create a volume for persistent data
+VOLUME /home/node/.n8n
+
+# Expose port 5678
+EXPOSE 5678
+
+# Set environment variables
+ENV NODE_ENV=production
+
+# Use the default n8n command to start the application
+CMD ["n8n", "start"]
+</file>
+
+<file path="gulpfile.js">
+const path = require('path');
+const { task, src, dest, parallel } = require('gulp');
+
+task('build:icons', copyIcons);
+task('build:browsers', copyBrowsers);
+
+function copyIcons() {
+    const nodeSource = path.resolve('nodes', '**', '*.{png,svg}');
+    const nodeDestination = path.resolve('dist', 'nodes');
+
+    return src(nodeSource).pipe(dest(nodeDestination));
+}
+
+function copyBrowsers() {
+    const browserSource = path.resolve('nodes', 'browsers', '**', '*');
+    const browserDestination = path.resolve('dist', 'nodes', 'browsers');
+
+    return src(browserSource).pipe(dest(browserDestination));
+}
+
+exports.default = parallel(copyIcons, copyBrowsers);
+</file>
+
+<file path="index.js">
+import { Playwright } from './nodes/playwright/Playwright.node';
+
+export { Playwright };
+
+module.exports = {
+    Playwright: Playwright,
+};
+</file>
+
+<file path="LICENSE.md">
+Copyright 2024 n8n
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="package.json">
+{
+  "name": "n8n-nodes-playwright",
+  "version": "0.2.16",
+  "description": "n8n-community-node-package for browser automation using Playwright",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "license": "MIT",
+  "homepage": "",
+  "author": {
+    "name": "Mohamed Toema",
+    "email": "m.toema20@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toema/n8n-playwright"
+  },
+  "engines": {
+    "node": ">=18.10",
+    "pnpm": ">=9.1"
+  },
+  "packageManager": "pnpm@9.1.4",
+  "main": "dist/nodes/index.js",
+  "scripts": {
+    "preinstall": "npx only-allow pnpm",
+    "postinstall": "npm config set yes true && node dist/nodes/scripts/setup-browsers.js",
+    "rebuild": "node dist/nodes/scripts/setup-browsers.js",
+    "setup": "npm config set yes true && node dist/nodes/scripts/setup-browsers.js ",
+    "test:setup": "ts-node scripts/test-setup.ts",
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "format": "prettier nodes package.json --write",
+    "lint": "eslint nodes package.json",
+    "lintfix": "eslint nodes package.json --fix",
+    "prepublish": "pnpm build && pnpm lint -c .eslintrc.prepublish.js nodes  package.json && npm version patch",
+    "publish": " npm publish --access public"
+  },
+  "files": [
+    "dist",
+    "nodes/browsers"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": [
+      "dist/nodes/playwright/Playwright.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.10.1",
+    "@typescript-eslint/parser": "^7.15.0",
+    "eslint": "^8.56.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.1",
+    "gulp": "^4.0.2",
+    "n8n-workflow": "*",
+    "playwright": "^1.49.0",
+    "prettier": "^3.3.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "dependencies": {
+    "fs-extra": "^11.2.0",
+    "playwright": "1.49.0"
+  }
+}
+</file>
+
+<file path="README_TEMPLATE.md">
+# n8n-nodes-_node-name_
+
+This is an n8n community node. It lets you use _app/service name_ in your n8n workflows.
+
+_App/service name_ is _one or two sentences describing the service this node integrates with_.
+
+[n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
+
+[Installation](#installation)  
+[Operations](#operations)  
+[Credentials](#credentials)  <!-- delete if no auth needed -->  
+[Compatibility](#compatibility)  
+[Usage](#usage)  <!-- delete if not using this section -->  
+[Resources](#resources)  
+[Version history](#version-history)  <!-- delete if not using this section -->  
+
+## Installation
+
+Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
+
+## Operations
+
+_List the operations supported by your node._
+
+## Credentials
+
+_If users need to authenticate with the app/service, provide details here. You should include prerequisites (such as signing up with the service), available authentication methods, and how to set them up._
+
+## Compatibility
+
+_State the minimum n8n version, as well as which versions you test against. You can also include any known version incompatibility issues._
+
+## Usage
+
+_This is an optional section. Use it to help users with any difficult or confusing aspects of the node._
+
+_By the time users are looking for community nodes, they probably already know n8n basics. But if you expect new users, you can link to the [Try it out](https://docs.n8n.io/try-it-out/) documentation to help them get started._
+
+## Resources
+
+* [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
+* _Link to app/service documentation._
+
+## Version history
+
+_This is another optional section. If your node has multiple versions, include a short description of available versions and what changed, as well as any compatibility impact._
+</file>
+
+<file path="README.md">
+# n8n-nodes-playwright
+
+This is an n8n community node. It lets you automate browser actions using Playwright in your n8n workflows.
+
+[n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
+
+[Installation](#installation)
+
+[Operations](#operations)
+
+[Compatibility](#compatibility)
+
+[Resources](#resources)
+
+[Version history](#version-history)
+
+## Installation
+
+Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
+
+```bash
+pnpm install n8n-nodes-playwright
+
+```
+
+Note: The package will automatically download and set up the required browser binaries during installation. This requires approximately 1GB of disk space.
+
+If you need to manually trigger the browser setup:
+
+```bash
+pnpm rebuild n8n-nodes-playwright
+
+```
+
+Operations
+----------
+
+This node supports the following operations:
+
+-   Navigate: Go to a specified URL
+-   Take Screenshot: Capture a screenshot of a webpage
+-   Get Text: Extract text from an element using CSS selector
+-   Click Element: Click on an element using CSS selector
+-   Fill Form: Fill a form field using CSS selector
+
+### Browser Options
+
+-   Choose between Chromium, Firefox, or WebKit
+-   Configure headless mode
+-   Adjust operation speed with slow motion option
+
+### Screenshot Options
+
+-   Full page capture
+-   Custom save path
+-   Base64 output
+
+Compatibility
+-------------
+
+-   Requires n8n version 1.0.0 or later
+-   Tested with Playwright version 1.49.0
+-   Supports Windows, macOS, and Linux
+
+### System Requirements
+
+-   Node.js 18.10 or later
+-   Approximately 1GB disk space for browser binaries
+-   Additional system dependencies may be required for browser automation
+
+Resources
+---------
+
+-   [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
+-   [Playwright documentation](https://playwright.dev/docs/intro)
+
+Version history
+---------------
+
+### 0.1.*
+
+-   Initial release
+-   Basic browser automation operations
+-   Support for Chromium, Firefox, and WebKit.
+-   Screenshot and form interaction capabilities
+
+### Troubleshooting
+
+If browsers are not installed correctly:
+
+1.  Clean the installation:
+
+```bash
+rm -rf ~/.cache/ms-playwright
+# or for Windows:
+rmdir /s /q %USERPROFILE%\AppData\Local\ms-playwright
+
+```
+
+1.  Rebuild the package:
+
+```bash
+pnpm rebuild n8n-nodes-playwright
+
+```
+
+### License
+
+[MIT](https://github.com/n8n-io/n8n-nodes-starter/blob/master/LICENSE.md)
+</file>
+
+<file path="tsconfig.json">
+{
+    "compilerOptions": {
+        "strict": true,
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "target": "es2019",
+        "lib": ["es2019", "es2020", "es2022.error"],
+        "removeComments": true,
+        "useUnknownInCatchVariables": false,
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "noUnusedLocals": true,
+        "strictNullChecks": true,
+        "preserveConstEnums": true,
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "incremental": true,
+        "declaration": true,
+        "sourceMap": true,
+        "skipLibCheck": true,
+        "outDir": "./dist/",
+				"rootDir": ".",
+    },
+    "include": [
+        "nodes/**/*",
+        "nodes/**/*.json",
+        "package.json", "dist/nodes/browsers",
+    ],
+}
+</file>
+
+<file path="tslint.json">
+{
+	"linterOptions": {
+		"exclude": [
+			"node_modules/**/*"
+		]
+	},
+	"defaultSeverity": "error",
+	"jsRules": {},
+	"rules": {
+		"array-type": [
+			true,
+			"array-simple"
+		],
+		"arrow-return-shorthand": true,
+		"ban": [
+			true,
+			{
+				"name": "Array",
+				"message": "tsstyle#array-constructor"
+			}
+		],
+		"ban-types": [
+			true,
+			[
+				"Object",
+				"Use {} instead."
+			],
+			[
+				"String",
+				"Use 'string' instead."
+			],
+			[
+				"Number",
+				"Use 'number' instead."
+			],
+			[
+				"Boolean",
+				"Use 'boolean' instead."
+			]
+		],
+		"class-name": true,
+		"curly": [
+			true,
+			"ignore-same-line"
+		],
+		"forin": true,
+		"jsdoc-format": true,
+		"label-position": true,
+		"indent": [
+			true,
+			"tabs",
+			2
+		],
+		"member-access": [
+			true,
+			"no-public"
+		],
+		"new-parens": true,
+		"no-angle-bracket-type-assertion": true,
+		"no-any": true,
+		"no-arg": true,
+		"no-conditional-assignment": true,
+		"no-construct": true,
+		"no-debugger": true,
+		"no-default-export": true,
+		"no-duplicate-variable": true,
+		"no-inferrable-types": true,
+		"ordered-imports": [
+			true,
+			{
+				"import-sources-order": "any",
+				"named-imports-order": "case-insensitive"
+			}
+		],
+		"no-namespace": [
+			true,
+			"allow-declarations"
+		],
+		"no-reference": true,
+		"no-string-throw": true,
+		"no-unused-expression": true,
+		"no-var-keyword": true,
+		"object-literal-shorthand": true,
+		"only-arrow-functions": [
+			true,
+			"allow-declarations",
+			"allow-named-functions"
+		],
+		"prefer-const": true,
+		"radix": true,
+		"semicolon": [
+			true,
+			"always",
+			"ignore-bound-class-methods"
+		],
+		"switch-default": true,
+		"trailing-comma": [
+			true,
+			{
+				"multiline": {
+					"objects": "always",
+					"arrays": "always",
+					"functions": "always",
+					"typeLiterals": "ignore"
+				},
+				"esSpecCompliant": true
+			}
+		],
+		"triple-equals": [
+			true,
+			"allow-null-check"
+		],
+		"use-isnan": true,
+		"quotes": [
+			"error",
+			"single"
+		],
+		"variable-name": [
+			true,
+			"check-format",
+			"ban-keywords",
+			"allow-leading-underscore",
+			"allow-trailing-underscore"
+		]
+	},
+	"rulesDirectory": []
+}
+</file>
+
+</files>

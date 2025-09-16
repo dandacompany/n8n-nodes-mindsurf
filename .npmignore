@@ -1,0 +1,41 @@
+# Source files
+nodes/**/*.ts
+!nodes/**/*.d.ts
+
+# Build files
+tsconfig.json
+gulpfile.js
+.eslintrc.js
+.prettierrc
+
+# Development files
+*.spec.ts
+*.test.ts
+__tests__/
+test/
+tests/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Dependencies
+node_modules/
+
+# Misc
+.DS_Store
+*.log
+.env*
+tmp/
+temp/
